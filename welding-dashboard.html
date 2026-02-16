@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">  
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -51,7 +51,7 @@
 <!-- ============================================================
      ⚙️ SUPABASE SETUP BANNER (shown until configured)
      ============================================================ -->
-<div id="setup-banner" class="bg-blue-600 text-white px-6 py-3 text-sm flex items-center justify-between">
+<div id="setup-banner" class="bg-blue-600 text-white px-6 py-3 text-sm flex items-center justify-between" style="display:none;">
     <div>
         ⚙️ <strong>Setup needed:</strong> Replace <code class="bg-blue-800 px-1 rounded">YOUR_SUPABASE_URL</code> and <code class="bg-blue-800 px-1 rounded">YOUR_SUPABASE_ANON_KEY</code> in the &lt;script&gt; below. See instructions at the bottom of this page.
     </div>
@@ -231,7 +231,7 @@
         <!-- ================================================================
              📋 SETUP INSTRUCTIONS (shown at bottom of page)
              ================================================================ -->
-        <div id="setup-instructions" class="mt-8 bg-amber-50 border border-amber-200 rounded-xl p-6">
+        <div id="setup-instructions" class="mt-8 bg-amber-50 border border-amber-200 rounded-xl p-6" style="display:none;">
             <h3 class="text-lg font-bold text-amber-800 mb-3">🛠️ How to Connect Supabase (3 easy steps)</h3>
             <ol class="text-sm text-amber-900 space-y-3 list-decimal list-inside">
                 <li>
@@ -334,22 +334,14 @@ location (text), ok (int4), ng (int4), pic (text), status (text), action (text)<
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 <!-- Supabase SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <script>
-const SUPABASE_URL  = 'https://lhjvwjacazajqdtxnjvc.supabase.co';
-const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxoanZ3amFjYXphanFkdHhuanZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzgxOTcsImV4cCI6MjA4Njc1NDE5N30.FxazbbuQWDiej3oPEFDWDrqEYcaoVvM5dsRo0s-k5rc';
-
-const TABLE_NAME = 'welding_problems';
-
-let supabase = null;
-let isSupabaseReady = false;
-</script>
-
 // ============================================================
 // 🔑 STEP 1: PASTE YOUR SUPABASE CREDENTIALS HERE
 //    Get them from: supabase.com → Your Project → Settings → API
 // ============================================================
-const SUPABASE_URL  = 'https://lhjvwjacazajqdtxnjvc.supabase.co';   // e.g. https://xxxx.supabase.co
-const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxoanZ3amFjYXphanFkdHhuanZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzgxOTcsImV4cCI6MjA4Njc1NDE5N30.FxazbbuQWDiej3oPEFDWDrqEYcaoVvM5dsRo0s-k5rc'; // long string starting with "eyJ..."
+const SUPABASE_URL  = 'https://lhjvwjacazajqdtxnjvc.supabase.co';
+const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxoanZ3amFjYXphanFkdHhuanZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzgxOTcsImV4cCI6MjA4Njc1NDE5N30.FxazbbuQWDiej3oPEFDWDrqEYcaoVvM5dsRo0s-k5rc';
 // ============================================================
 
 const TABLE_NAME = 'welding_problems'; // Must match your Supabase table name
@@ -359,7 +351,7 @@ let supabase = null;
 let isSupabaseReady = false;
 
 function initSupabase() {
-    if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_KEY === 'YOUR_SUPABASE_ANON_KEY') {
+    if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_KEY === 'YOUR_SUPABASE_ANON_KEY' || !SUPABASE_KEY.startsWith('eyJ')) {
         setConnectionStatus('not-configured');
         // Fall back to sample data so the dashboard still works
         problemsData = getSampleData();
