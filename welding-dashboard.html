@@ -335,10 +335,18 @@ location (text), ok (int4), ng (int4), pic (text), status (text), action (text)<
 <!-- Supabase SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  const supabaseUrl = "https://lhjvwjacazajqdtxnjvc.supabase.co";
-  const supabaseKey = "sb_publishable_rD615Xykm-nfWbkZxHqZ0w_jbJ7UEEu";
-  const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+const SUPABASE_URL  = 'https://lhjvwjacazajqdtxnjvc.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_rD615Xykm-nfWbkZxHqZ0w_jbJ7UEEu';
+
+const TABLE_NAME = 'welding_problems';
+
+let supabase = null;
+let isSupabaseReady = false;
+...
+SEMUA FUNCTION DI BAWAH SINI
+...
 </script>
+
 // ============================================================
 // 🔑 STEP 1: PASTE YOUR SUPABASE CREDENTIALS HERE
 //    Get them from: supabase.com → Your Project → Settings → API
