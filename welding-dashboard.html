@@ -63,6 +63,20 @@
     <span class="status-dot dot-yellow" id="conn-dot"></span>
     <span id="conn-text">Connecting to database...</span>
     <span class="ml-auto text-gray-400" id="last-updated">-</span>
+    <button id="retry-btn" onclick="retryConnection()" style="display:none;" class="ml-3 text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">🔄 Retry</button>
+</div>
+<!-- RLS Warning Banner (shown only on error) -->
+<div id="rls-banner" style="display:none;" class="bg-red-50 border-b border-red-200 px-6 py-3 text-sm text-red-800">
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <strong>⚠️ Penyebab error: Row Level Security (RLS) memblokir akses.</strong>
+            <br>Pergi ke Supabase → <strong>SQL Editor</strong> → jalankan perintah ini:
+            <br><code style="background:#fee2e2;padding:4px 8px;border-radius:4px;display:inline-block;margin-top:6px;user-select:all;">
+            ALTER TABLE welding_problems DISABLE ROW LEVEL SECURITY;
+            </code>
+        </div>
+        <button onclick="document.getElementById('rls-banner').style.display='none'" class="text-red-500 font-bold text-lg flex-shrink-0">✕</button>
+    </div>
 </div>
 
 <div class="min-h-screen p-6" id="main-container">
@@ -393,30 +407,34 @@ async function loadDataFromSupabase() {
             .select('*')
             .order('date', { ascending: false });
 
-        if (error) throw error;
+        if (error) {
+            // Common causes: table doesn't exist, RLS blocking, wrong table name
+            console.error('Supabase query error:', error);
+            throw new Error(error.message || error.details || JSON.stringify(error));
+        }
 
         // Convert Supabase column names (snake_case) → our format (camelCase)
         problemsData = (data || []).map(row => ({
             date:     row.date,
-            partNo:   row.part_no,
-            partName: row.part_name,
-            vendor:   row.vendor,
-            problem:  row.problem,
-            location: row.location,
-            ok:       row.ok,
-            ng:       row.ng,
-            pic:      row.pic,
-            status:   row.status,
-            action:   row.action
+            partNo:   row.part_no   || '',
+            partName: row.part_name || '',
+            vendor:   row.vendor    || '',
+            problem:  row.problem   || '',
+            location: row.location  || '',
+            ok:       Number(row.ok) || 0,
+            ng:       Number(row.ng) || 0,
+            pic:      row.pic    || '',
+            status:   row.status || '',
+            action:   row.action || ''
         }));
 
         setConnectionStatus('connected');
         finishInit();
-        subscribeToRealtime(); // 🔴 LIVE updates!
+        subscribeToRealtime();
 
     } catch (err) {
         console.error('Load error:', err);
-        setConnectionStatus('error');
+        setConnectionStatus('error', err.message);
         problemsData = getSampleData();
         finishInit();
     }
@@ -444,29 +462,48 @@ function subscribeToRealtime() {
 }
 
 // ---- Connection status display ----
-function setConnectionStatus(state) {
-    const dot  = document.getElementById('conn-dot');
-    const text = document.getElementById('conn-text');
-    const now  = new Date().toLocaleTimeString('id-ID');
+function setConnectionStatus(state, detail) {
+    const dot     = document.getElementById('conn-dot');
+    const text    = document.getElementById('conn-text');
+    const retryBtn = document.getElementById('retry-btn');
+    const now     = new Date().toLocaleTimeString('id-ID');
+
+    retryBtn.style.display = 'none';
 
     if (state === 'connected') {
         dot.className  = 'status-dot dot-green';
         text.textContent = '✅ Connected to Supabase database';
         document.getElementById('last-updated').textContent = 'Last updated: ' + now;
         document.getElementById('connection-bar').style.backgroundColor = '#f0fdf4';
+        document.getElementById('rls-banner').style.display = 'none';
     } else if (state === 'connecting') {
         dot.className  = 'status-dot dot-yellow';
         text.textContent = 'Connecting to Supabase...';
     } else if (state === 'error') {
         dot.className  = 'status-dot dot-red';
-        text.textContent = '❌ Database connection failed — showing sample data';
+        const hint = detail ? ` — ${detail}` : '';
+        text.innerHTML = '❌ Gagal konek ke database' + hint;
         document.getElementById('connection-bar').style.backgroundColor = '#fef2f2';
+        document.getElementById('rls-banner').style.display = 'block';
+        retryBtn.style.display = 'inline-block';
     } else if (state === 'not-configured') {
         dot.className  = 'status-dot dot-yellow';
-        text.textContent = '⚠️ Supabase not configured — showing sample data (see setup instructions below)';
+        text.textContent = '⚠️ Supabase belum dikonfigurasi — menampilkan sample data';
         document.getElementById('connection-bar').style.backgroundColor = '#fffbeb';
     }
 }
+
+// ---- Retry connection ----
+window.retryConnection = function() {
+    document.getElementById('rls-banner').style.display = 'none';
+    document.getElementById('retry-btn').style.display = 'none';
+    setConnectionStatus('connecting');
+    if (isSupabaseReady && sbClient) {
+        loadDataFromSupabase();
+    } else {
+        initSupabase();
+    }
+};
 
 // ============================================================
 // App State
@@ -497,7 +534,11 @@ function renderTable(data) {
     tbody.innerHTML = '';
 
     if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-10 text-gray-400">No data found</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center py-12 text-gray-400">
+            <div style="font-size:2rem;">📋</div>
+            <div class="font-semibold mt-2">Belum ada data</div>
+            <div class="text-xs mt-1">Klik "+ Add Problem" untuk menambah data pertama</div>
+        </td></tr>`;
         return;
     }
 
@@ -652,10 +693,13 @@ async function addNewProblem(event) {
                     action:    newProblem.action
                 }]);
 
-            if (error) throw error;
+            if (error) {
+                console.error('Supabase insert error:', error);
+                throw new Error(error.message || error.details || JSON.stringify(error));
+            }
 
             // Real-time will auto-refresh, but also update locally for speed
-            problemsData.push(newProblem);
+            problemsData.unshift(newProblem);
             saveStatus.className = 'text-sm text-center py-2 rounded-lg bg-green-50 text-green-700';
             saveStatus.textContent = '✅ Saved to database!';
             saveStatus.classList.remove('hidden');
