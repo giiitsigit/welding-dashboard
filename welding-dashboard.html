@@ -347,19 +347,19 @@ const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const TABLE_NAME = 'welding_problems'; // Must match your Supabase table name
 
 // ---- Init Supabase client ----
-let supabase = null;
+let sbClient = null;
 let isSupabaseReady = false;
 
 function initSupabase() {
     if (!SUPABASE_URL || !SUPABASE_KEY || SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_KEY === 'YOUR_SUPABASE_ANON_KEY' || !SUPABASE_KEY.startsWith('eyJ')) {
         setConnectionStatus('not-configured');
-        // Fall back to sample data so the dashboard still works
         problemsData = getSampleData();
         finishInit();
         return;
     }
     try {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const { createClient } = window.supabase;
+        sbClient = createClient(SUPABASE_URL, SUPABASE_KEY);
         isSupabaseReady = true;
         setConnectionStatus('connecting');
         loadDataFromSupabase();
@@ -388,7 +388,7 @@ function getSampleData() {
 // ---- Load data from Supabase ----
 async function loadDataFromSupabase() {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await sbClient
             .from(TABLE_NAME)
             .select('*')
             .order('date', { ascending: false });
@@ -424,7 +424,7 @@ async function loadDataFromSupabase() {
 
 // ---- Real-time subscription (auto-updates when anyone adds data) ----
 function subscribeToRealtime() {
-    supabase
+    sbClient
         .channel('welding_changes')
         .on('postgres_changes',
             { event: '*', schema: 'public', table: TABLE_NAME },
@@ -549,7 +549,7 @@ function updateKPIs(data) {
     document.getElementById('total-pacs').textContent = data.filter(i => i.action === 'PACS').length;
 }
 
-function filterTable() {
+window.filterTable = function() {
     const search = document.getElementById('search-input').value.toLowerCase();
     const monthFilter  = document.getElementById('month-filter').value;
     const statusFilter = document.getElementById('status-filter').value;
@@ -633,10 +633,10 @@ async function addNewProblem(event) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Saving...';
 
-    if (isSupabaseReady && supabase) {
+    if (isSupabaseReady && sbClient) {
         // 🟢 Save to Supabase database
         try {
-            const { error } = await supabase
+            const { error } = await sbClient
                 .from(TABLE_NAME)
                 .insert([{
                     date:      newProblem.date,
@@ -691,6 +691,11 @@ async function addNewProblem(event) {
 // Charts
 // ============================================================
 function createCharts() {
+    // Destroy existing charts before recreating to avoid canvas reuse errors
+    if (window.statusChart) { window.statusChart.destroy(); window.statusChart = null; }
+    if (window.vendorChart) { window.vendorChart.destroy(); window.vendorChart = null; }
+    if (window.partChart)   { window.partChart.destroy();   window.partChart = null; }
+
     const statusCtx = document.getElementById('statusChart').getContext('2d');
     window.statusChart = new Chart(statusCtx, {
         type: 'doughnut',
@@ -781,14 +786,14 @@ function updateChartsWithFilteredData(data) {
 // ============================================================
 // Modals
 // ============================================================
-function showAddModal() {
+window.showAddModal = function() {
     document.getElementById('add-modal').style.display = 'flex';
     document.getElementById('input-date').valueAsDate = new Date();
     document.getElementById('save-status').classList.add('hidden');
     document.getElementById('submit-btn').disabled = false;
     document.getElementById('submit-btn').innerHTML = 'Add Problem';
 }
-function hideAddModal() {
+window.hideAddModal = function() {
     document.getElementById('add-modal').style.display = 'none';
     document.getElementById('add-form').reset();
     document.getElementById('save-status').classList.add('hidden');
@@ -832,7 +837,7 @@ function showDetailModal(title, data) {
 // ============================================================
 // Dark Mode
 // ============================================================
-function toggleDarkMode() {
+window.toggleDarkMode = function() {
     darkMode = !darkMode;
     document.getElementById('body').classList.toggle('dark-mode', darkMode);
     document.getElementById('body').classList.toggle('light-mode', !darkMode);
@@ -858,7 +863,7 @@ function toggleDarkMode() {
 // ============================================================
 // Export
 // ============================================================
-function toggleExportMenu() {
+window.toggleExportMenu = function() {
     const m = document.getElementById('export-menu');
     m.style.display = m.style.display === 'none' ? 'block' : 'none';
 }
@@ -868,7 +873,7 @@ document.addEventListener('click', e => {
     if (m && !m.contains(e.target) && !b.contains(e.target)) m.style.display = 'none';
 });
 
-function exportToExcel() {
+window.exportToExcel = function() {
     document.getElementById('export-menu').style.display = 'none';
     const excelData = currentFilteredData.map(item => ({
         'Date': new Date(item.date).toLocaleDateString('id-ID'),
@@ -886,7 +891,7 @@ function exportToExcel() {
     showNotification('Excel downloaded!', 'success');
 }
 
-function exportToPDF() {
+window.exportToPDF = function() {
     document.getElementById('export-menu').style.display = 'none';
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('landscape');
