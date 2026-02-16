@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welding Quality Control Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+        .card { transition: all 0.3s ease; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        .dark-mode { background-color: #111827; }
+        .light-mode { background: linear-gradient(to bottom right, #f8fafc, #f1f5f9); }
+        .status-badge { padding: 4px 12px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .priority-badge { padding: 4px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; color: white; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { padding: 12px 24px; text-align: left; }
+        .chart-container { width: 100%; height: 300px; display: flex; align-items: center; justify-content: center; }
+        .bar { transition: all 0.3s ease; }
+        .bar:hover { opacity: 0.8; }
+        .cursor-pointer { cursor: pointer; }
+        .detail-modal { max-height: 80vh; overflow-y: auto; }
+
+        /* Loading spinner */
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Connection status dot */
+        .status-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .dot-green { background: #10b981; box-shadow: 0 0 6px #10b981; }
+        .dot-red { background: #ef4444; }
+        .dot-yellow { background: #f59e0b; animation: blink 1s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    </style>
+</head>
+<body class="light-mode" id="body">
+
+<!-- ============================================================
+     ⚙️ SUPABASE SETUP BANNER (shown until configured)
+     ============================================================ -->
+<div id="setup-banner" class="bg-blue-600 text-white px-6 py-3 text-sm flex items-center justify-between">
+    <div>
+        ⚙️ <strong>Setup needed:</strong> Replace <code class="bg-blue-800 px-1 rounded">YOUR_SUPABASE_URL</code> and <code class="bg-blue-800 px-1 rounded">YOUR_SUPABASE_ANON_KEY</code> in the &lt;script&gt; below. See instructions at the bottom of this page.
+    </div>
+    <button onclick="document.getElementById('setup-banner').style.display='none'" class="ml-4 text-blue-200 hover:text-white">✕</button>
+</div>
+
+<!-- Connection Status Bar -->
+<div id="connection-bar" class="bg-gray-100 px-6 py-2 text-xs flex items-center gap-2 border-b border-gray-200">
+    <span class="status-dot dot-yellow" id="conn-dot"></span>
+    <span id="conn-text">Connecting to database...</span>
+    <span class="ml-auto text-gray-400" id="last-updated">-</span>
+</div>
+
+<div class="min-h-screen p-6" id="main-container">
+    <div class="max-w-7xl mx-auto">
+
+        <!-- Header -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-6 border-l-4 border-blue-600" id="header-card">
+            <div class="flex justify-between items-center flex-wrap gap-4">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900 mb-2" id="main-title">PI WELDING DASHBOARD</h1>
+                    <p class="text-gray-600" id="subtitle">Real-time monitoring and problem tracking system</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="toggleDarkMode()" class="bg-gray-200 hover:bg-gray-300 p-3 rounded-lg transition-all" id="theme-toggle">
+                        <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                        <svg id="sun-icon" style="display:none;" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
+                    </button>
+                    <button onclick="showAddModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-all shadow-md hover:shadow-lg">
+                        <span>+ Add Problem</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+            <div class="bg-white card rounded-xl shadow-md p-6 border-l-4 border-red-500" id="kpi-problems">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600 mb-1">Total Problems</p>
+                        <p class="text-3xl font-bold text-gray-900" id="total-problems">-</p>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                </div>
+            </div>
+            <div class="bg-white card rounded-xl shadow-md p-6 border-l-4 border-yellow-500" id="kpi-defect">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600 mb-1">Defect Rate</p>
+                        <p class="text-3xl font-bold text-gray-900" id="defect-rate">-</p>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                </div>
+            </div>
+            <div class="bg-white card rounded-xl shadow-md p-6 border-l-4 border-green-500 cursor-pointer hover:shadow-lg transition-all" id="kpi-ok" onclick="showVendorDetail()">
+                <div class="flex items-center justify-between">
+                    <div class="w-full">
+                        <p class="text-sm text-gray-600 mb-1">Worst Vendor</p>
+                        <p class="text-2xl font-bold text-gray-900" id="worst-vendor">-</p>
+                        <p class="text-xs text-gray-500 mt-1" id="worst-vendor-count">-</p>
+                        <p class="text-xs text-gray-400 mt-0.5">Click to see details →</p>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                </div>
+            </div>
+            <div class="bg-white card rounded-xl shadow-md p-6 border-l-4 border-orange-500 cursor-pointer hover:shadow-lg transition-all" id="kpi-ng" onclick="showPACSDetail()">
+                <div class="flex items-center justify-between">
+                    <div class="w-full">
+                        <p class="text-sm text-gray-600 mb-1">Total PACS</p>
+                        <p class="text-3xl font-bold text-gray-900" id="total-pacs">-</p>
+                        <p class="text-xs text-gray-500 mt-1">Click to see details →</p>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white rounded-xl shadow-md p-6 mb-6" id="filters-card">
+            <div class="flex items-center gap-2 mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                <h3 class="text-lg font-semibold text-gray-900">Filters</h3>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <input type="text" id="search-input" onkeyup="filterTable()" placeholder="Search part no, name..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <select id="month-filter" onchange="filterTable()" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <option value="ALL">All (1 Year)</option>
+                    <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+                    <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+                    <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+                    <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                </select>
+                <select id="status-filter" onchange="filterTable()" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <option value="ALL">All Status</option>
+                    <option value="ANALISA">ANALISA</option><option value="CONTROL">CONTROL</option><option value="SELESAI">SELESAI</option>
+                </select>
+                <select id="vendor-filter" onchange="filterTable()" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <option value="ALL">All Vendors</option>
+                </select>
+                <select id="pic-filter" onchange="filterTable()" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <option value="ALL">All PICs</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white rounded-xl shadow-md p-6" id="status-chart-card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Problem Status Distribution</h3>
+                <div class="chart-container"><canvas id="statusChart"></canvas></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6" id="vendor-chart-card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Defect by Vendor</h3>
+                <div class="chart-container"><canvas id="vendorChart"></canvas></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6" id="part-chart-card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Defect by Part Number</h3>
+                <div class="chart-container"><canvas id="partChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Problem Table -->
+        <div class="bg-white rounded-xl shadow-md overflow-hidden" id="table-card">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-semibold text-gray-900">Problem Details</h3>
+                    <div class="flex items-center gap-3">
+                        <!-- Live indicator -->
+                        <div id="live-badge" class="hidden items-center gap-1 text-xs text-green-600 font-semibold bg-green-50 px-3 py-1 rounded-full border border-green-200">
+                            <span class="status-dot dot-green" style="width:7px;height:7px;margin-right:3px;"></span> LIVE
+                        </div>
+                        <div class="relative">
+                            <button onclick="toggleExportMenu()" id="export-btn" class="text-blue-600 hover:text-blue-800 flex items-center gap-2 px-4 py-2 border border-blue-600 rounded-lg hover:bg-blue-50">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                Export
+                            </button>
+                            <div id="export-menu" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10" style="display: none;">
+                                <div class="py-1">
+                                    <button onclick="exportToExcel()" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                        <span class="text-gray-700">Download Excel</span>
+                                    </button>
+                                    <button onclick="exportToPDF()" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                        <span class="text-gray-700">Download PDF</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full" id="problems-table">
+                    <thead class="bg-gray-50" id="table-header">
+                        <tr>
+                            <th>Date</th><th>Part No</th><th>Part Name</th><th>Vendor</th>
+                            <th>Problem</th><th>Location</th><th>OK/NG</th><th>Priority</th>
+                            <th>PIC</th><th>Status</th><th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body" class="bg-white divide-y divide-gray-200">
+                        <tr><td colspan="11" class="text-center py-10 text-gray-400">
+                            <div class="spinner mx-auto mb-2"></div>Loading data...
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ================================================================
+             📋 SETUP INSTRUCTIONS (shown at bottom of page)
+             ================================================================ -->
+        <div id="setup-instructions" class="mt-8 bg-amber-50 border border-amber-200 rounded-xl p-6">
+            <h3 class="text-lg font-bold text-amber-800 mb-3">🛠️ How to Connect Supabase (3 easy steps)</h3>
+            <ol class="text-sm text-amber-900 space-y-3 list-decimal list-inside">
+                <li>
+                    Go to <a href="https://supabase.com" target="_blank" class="underline font-semibold">supabase.com</a> → Create a free account → Create a new project
+                </li>
+                <li>
+                    In Supabase: go to <strong>Table Editor</strong> → <strong>New Table</strong> → name it <code class="bg-amber-100 px-1 rounded">welding_problems</code> → Add these columns:<br>
+                    <code class="bg-amber-100 px-1 rounded text-xs block mt-2 p-2 whitespace-pre">date (text), part_no (text), part_name (text), vendor (text), problem (text),
+location (text), ok (int4), ng (int4), pic (text), status (text), action (text)</code>
+                </li>
+                <li>
+                    Go to <strong>Project Settings → API</strong> → copy your <strong>Project URL</strong> and <strong>anon public</strong> key →
+                    Replace <code class="bg-amber-100 px-1 rounded">YOUR_SUPABASE_URL</code> and <code class="bg-amber-100 px-1 rounded">YOUR_SUPABASE_ANON_KEY</code> in the JavaScript below (near the top of the &lt;script&gt; tag)
+                </li>
+            </ol>
+            <p class="text-xs text-amber-700 mt-4">✅ Once connected, all data added via "+ Add Problem" will be saved to Supabase and sync across all browsers automatically!</p>
+            <button onclick="document.getElementById('setup-instructions').style.display='none'" class="mt-3 text-xs text-amber-600 underline">Hide this</button>
+        </div>
+
+    </div>
+</div>
+
+<!-- Add Problem Modal -->
+<div id="add-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" style="display: none;">
+    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6" id="modal-content">
+        <h3 class="text-xl font-bold text-gray-900 mb-4">Add New Problem</h3>
+        <form id="add-form" class="space-y-4" onsubmit="addNewProblem(event)">
+            <div class="grid grid-cols-2 gap-4">
+                <input type="date" id="input-date" class="px-4 py-2 border border-gray-300 rounded-lg" required>
+                <input type="text" id="input-partno" placeholder="Part No" class="px-4 py-2 border border-gray-300 rounded-lg" required>
+                <input type="text" id="input-partname" placeholder="Part Name" class="px-4 py-2 border border-gray-300 rounded-lg col-span-2" required>
+                <input type="text" id="input-vendor" placeholder="Vendor (e.g., PT.ABC)" class="px-4 py-2 border border-gray-300 rounded-lg" required>
+                <input type="text" id="input-problem" placeholder="Problem" class="px-4 py-2 border border-gray-300 rounded-lg" required>
+                <input type="text" id="input-location" placeholder="Location" class="px-4 py-2 border border-gray-300 rounded-lg" required>
+                <input type="number" id="input-ok" placeholder="OK Quantity" class="px-4 py-2 border border-gray-300 rounded-lg" min="0" required>
+                <input type="number" id="input-ng" placeholder="NG Quantity" class="px-4 py-2 border border-gray-300 rounded-lg" min="0" required>
+                <select id="input-pic" class="px-4 py-2 border border-gray-300 rounded-lg" required>
+                    <option value="">Select PIC</option>
+                    <option value="ROHIM">ROHIM</option><option value="FENDY">FENDY</option><option value="SIGIT">SIGIT</option>
+                </select>
+                <select id="input-status" class="px-4 py-2 border border-gray-300 rounded-lg" required>
+                    <option value="">Select Status</option>
+                    <option value="ANALISA">ANALISA</option><option value="CONTROL">CONTROL</option><option value="SELESAI">SELESAI</option>
+                </select>
+                <select id="input-action" class="px-4 py-2 border border-gray-300 rounded-lg col-span-2" required>
+                    <option value="">Select Action</option>
+                    <option value="REPAIR">REPAIR</option><option value="SORTIR">SORTIR</option>
+                    <option value="REPLACE">REPLACE</option><option value="PACS">PACS</option>
+                </select>
+            </div>
+            <div id="save-status" class="hidden text-sm text-center py-2 rounded-lg"></div>
+            <div class="flex gap-3 justify-end">
+                <button type="button" onclick="hideAddModal()" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button type="submit" id="submit-btn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                    Add Problem
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div id="detail-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style="display: none; z-index: 9999;">
+    <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full detail-modal" id="detail-modal-content">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
+            <h3 class="text-xl font-bold text-gray-900" id="detail-modal-title">Details</h3>
+            <button onclick="hideDetailModal()" class="text-gray-500 hover:text-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        <div class="p-6">
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Date</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Part No</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Part Name</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Problem</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Vendor</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">PIC</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detail-modal-body" class="bg-white divide-y divide-gray-200"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-200 flex justify-end">
+            <button onclick="hideDetailModal()" class="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+// ============================================================
+// 🔑 STEP 1: PASTE YOUR SUPABASE CREDENTIALS HERE
+//    Get them from: supabase.com → Your Project → Settings → API
+// ============================================================
+const SUPABASE_URL  = 'YOUR_SUPABASE_URL';   // e.g. https://xxxx.supabase.co
+const SUPABASE_KEY  = 'YOUR_SUPABASE_ANON_KEY'; // long string starting with "eyJ..."
+// ============================================================
+
+const TABLE_NAME = 'welding_problems'; // Must match your Supabase table name
+
+// ---- Init Supabase client ----
+let supabase = null;
+let isSupabaseReady = false;
+
+function initSupabase() {
+    if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_KEY === 'YOUR_SUPABASE_ANON_KEY') {
+        setConnectionStatus('not-configured');
+        // Fall back to sample data so the dashboard still works
+        problemsData = getSampleData();
+        finishInit();
+        return;
+    }
+    try {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        isSupabaseReady = true;
+        setConnectionStatus('connecting');
+        loadDataFromSupabase();
+    } catch (e) {
+        console.error('Supabase init error:', e);
+        setConnectionStatus('error');
+        problemsData = getSampleData();
+        finishInit();
+    }
+}
+
+// ---- Sample data (shown when Supabase not configured) ----
+function getSampleData() {
+    return [
+        { date: '2026-02-15', partNo: '14150-23K00', partName: 'PIPE EXH COMP',      vendor: 'PT.TCH',   problem: 'MEMBAL',       location: 'LINE WELDING', ok: 10,  ng: 20, pic: 'ROHIM', status: 'ANALISA', action: 'REPAIR'  },
+        { date: '2026-02-16', partNo: '14150-23K01', partName: 'PIPE HEAD',           vendor: 'PT.WIRA',  problem: 'SPATER',       location: 'LINE WELDING', ok: 600, ng: 5,  pic: 'FENDY', status: 'SELESAI', action: 'SORTIR'  },
+        { date: '2026-02-17', partNo: '14150-23K02', partName: 'TUBE CTR',            vendor: 'PT.SUP',   problem: 'CHAMFER',      location: 'RECEIVING',    ok: 120, ng: 6,  pic: 'SIGIT', status: 'CONTROL', action: 'REPAIR'  },
+        { date: '2026-02-18', partNo: '14150-23K03', partName: 'REINF 2 ENGINE',      vendor: 'PT.SUP',   problem: 'KARAT',        location: 'ASSY',         ok: 100, ng: 4,  pic: 'ROHIM', status: 'ANALISA', action: 'REPLACE' },
+        { date: '2026-02-19', partNo: '14150-23K04', partName: 'TUBE REAR',           vendor: 'PT.SUP',   problem: 'KOTOR',        location: 'PAINTING',     ok: 78,  ng: 23, pic: 'FENDY', status: 'SELESAI', action: 'PACS'    },
+        { date: '2026-02-20', partNo: '14150-23K05', partName: 'BRACKET FOOTREST',    vendor: 'PT.YTK',   problem: 'PENYOK',       location: 'LINE WELDING', ok: 90,  ng: 10, pic: 'SIGIT', status: 'CONTROL', action: 'SORTIR'  },
+        { date: '2026-02-21', partNo: '14150-23K06', partName: 'TUBE 11',             vendor: 'PT.MKJ',   problem: 'MISSING',      location: 'LINE WELDING', ok: 120, ng: 11, pic: 'ROHIM', status: 'ANALISA', action: 'PACS'    },
+        { date: '2026-02-22', partNo: '14150-23K07', partName: 'PIPE EXH COMP',       vendor: 'PT.IMMAT', problem: 'NIT TIDAK ADA',location: 'LINE WELDING', ok: 120, ng: 1,  pic: 'FENDY', status: 'SELESAI', action: 'PACS'    }
+    ];
+}
+
+// ---- Load data from Supabase ----
+async function loadDataFromSupabase() {
+    try {
+        const { data, error } = await supabase
+            .from(TABLE_NAME)
+            .select('*')
+            .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        // Convert Supabase column names (snake_case) → our format (camelCase)
+        problemsData = (data || []).map(row => ({
+            date:     row.date,
+            partNo:   row.part_no,
+            partName: row.part_name,
+            vendor:   row.vendor,
+            problem:  row.problem,
+            location: row.location,
+            ok:       row.ok,
+            ng:       row.ng,
+            pic:      row.pic,
+            status:   row.status,
+            action:   row.action
+        }));
+
+        setConnectionStatus('connected');
+        finishInit();
+        subscribeToRealtime(); // 🔴 LIVE updates!
+
+    } catch (err) {
+        console.error('Load error:', err);
+        setConnectionStatus('error');
+        problemsData = getSampleData();
+        finishInit();
+    }
+}
+
+// ---- Real-time subscription (auto-updates when anyone adds data) ----
+function subscribeToRealtime() {
+    supabase
+        .channel('welding_changes')
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: TABLE_NAME },
+            (payload) => {
+                console.log('Real-time change:', payload.eventType);
+                // Reload everything when data changes
+                loadDataFromSupabase();
+                showNotification('📡 Dashboard updated!', 'success');
+            }
+        )
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                document.getElementById('live-badge').classList.remove('hidden');
+                document.getElementById('live-badge').style.display = 'flex';
+            }
+        });
+}
+
+// ---- Connection status display ----
+function setConnectionStatus(state) {
+    const dot  = document.getElementById('conn-dot');
+    const text = document.getElementById('conn-text');
+    const now  = new Date().toLocaleTimeString('id-ID');
+
+    if (state === 'connected') {
+        dot.className  = 'status-dot dot-green';
+        text.textContent = '✅ Connected to Supabase database';
+        document.getElementById('last-updated').textContent = 'Last updated: ' + now;
+        document.getElementById('connection-bar').style.backgroundColor = '#f0fdf4';
+    } else if (state === 'connecting') {
+        dot.className  = 'status-dot dot-yellow';
+        text.textContent = 'Connecting to Supabase...';
+    } else if (state === 'error') {
+        dot.className  = 'status-dot dot-red';
+        text.textContent = '❌ Database connection failed — showing sample data';
+        document.getElementById('connection-bar').style.backgroundColor = '#fef2f2';
+    } else if (state === 'not-configured') {
+        dot.className  = 'status-dot dot-yellow';
+        text.textContent = '⚠️ Supabase not configured — showing sample data (see setup instructions below)';
+        document.getElementById('connection-bar').style.backgroundColor = '#fffbeb';
+    }
+}
+
+// ============================================================
+// App State
+// ============================================================
+let problemsData = [];
+let darkMode = false;
+let currentFilteredData = [];
+
+// ---- App Init ----
+window.onload = function() {
+    initSupabase();
+};
+
+function finishInit() {
+    currentFilteredData = problemsData;
+    renderTable(problemsData);
+    updateKPIs(problemsData);
+    createCharts();
+    updateFilterDropdowns();
+    document.getElementById('month-filter').value = 'ALL';
+}
+
+// ============================================================
+// Render Table
+// ============================================================
+function renderTable(data) {
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = '';
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-10 text-gray-400">No data found</td></tr>';
+        return;
+    }
+
+    const sorted = [...data].sort((a, b) => new Date(b.date) - new Date(a.date));
+    sorted.forEach(item => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50 transition-colors';
+        row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${new Date(item.date).toLocaleDateString('id-ID')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">${item.partNo}</td>
+            <td class="px-6 py-4 text-sm">${item.partName}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${item.vendor}</td>
+            <td class="px-6 py-4 text-sm">${item.problem}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${item.location}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                <span class="text-green-600 font-semibold">${item.ok}</span> / 
+                <span class="text-red-600 font-semibold">${item.ng}</span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${getPriorityBadge(item.ng, item.ok + item.ng)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${item.pic}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${getStatusBadge(item.status)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${item.action}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// ============================================================
+// KPIs, Filters, Badges
+// ============================================================
+function updateKPIs(data) {
+    const totalOK = data.reduce((s, i) => s + i.ok, 0);
+    const totalNG = data.reduce((s, i) => s + i.ng, 0);
+    const defectRate = totalOK + totalNG > 0 ? ((totalNG / (totalOK + totalNG)) * 100).toFixed(2) : '0.00';
+
+    document.getElementById('total-problems').textContent = data.length;
+    document.getElementById('defect-rate').textContent = defectRate + '%';
+
+    if (data.length > 0) {
+        const vf = {};
+        data.forEach(i => { vf[i.vendor] = (vf[i.vendor] || 0) + 1; });
+        const worst = Object.entries(vf).sort((a, b) => b[1] - a[1])[0];
+        document.getElementById('worst-vendor').textContent = worst[0];
+        document.getElementById('worst-vendor-count').textContent = `${worst[1]} problem${worst[1] > 1 ? 's' : ''}`;
+    } else {
+        document.getElementById('worst-vendor').textContent = '-';
+        document.getElementById('worst-vendor-count').textContent = 'No data';
+    }
+    document.getElementById('total-pacs').textContent = data.filter(i => i.action === 'PACS').length;
+}
+
+function filterTable() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const monthFilter  = document.getElementById('month-filter').value;
+    const statusFilter = document.getElementById('status-filter').value;
+    const vendorFilter = document.getElementById('vendor-filter').value;
+    const picFilter    = document.getElementById('pic-filter').value;
+
+    const filtered = problemsData.filter(item => {
+        const matchSearch  = item.partNo.toLowerCase().includes(search) ||
+                             item.partName.toLowerCase().includes(search) ||
+                             item.problem.toLowerCase().includes(search);
+        const itemMonth    = (new Date(item.date).getMonth() + 1).toString().padStart(2, '0');
+        const matchMonth   = monthFilter  === 'ALL' || itemMonth  === monthFilter;
+        const matchStatus  = statusFilter === 'ALL' || item.status === statusFilter;
+        const matchVendor  = vendorFilter === 'ALL' || item.vendor === vendorFilter;
+        const matchPIC     = picFilter    === 'ALL' || item.pic    === picFilter;
+        return matchSearch && matchMonth && matchStatus && matchVendor && matchPIC;
+    });
+
+    currentFilteredData = filtered;
+    renderTable(filtered);
+    updateKPIs(filtered);
+    updateChartsWithFilteredData(filtered);
+}
+
+function updateFilterDropdowns() {
+    const vendors = ['ALL', ...new Set(problemsData.map(d => d.vendor))];
+    const pics    = ['ALL', ...new Set(problemsData.map(d => d.pic))];
+
+    document.getElementById('vendor-filter').innerHTML =
+        vendors.map(v => `<option value="${v}">${v === 'ALL' ? 'All Vendors' : v}</option>`).join('');
+    document.getElementById('pic-filter').innerHTML =
+        pics.map(p => `<option value="${p}">${p === 'ALL' ? 'All PICs' : p}</option>`).join('');
+}
+
+function getPriorityBadge(ng, total) {
+    const rate = (ng / total) * 100;
+    if (rate > 15) return '<span class="priority-badge" style="background-color:#ef4444;">HIGH</span>';
+    if (rate > 5)  return '<span class="priority-badge" style="background-color:#f59e0b;">MED</span>';
+    return '<span class="priority-badge" style="background-color:#10b981;">LOW</span>';
+}
+function getPriorityText(ng, total) {
+    const rate = (ng / total) * 100;
+    if (rate > 15) return 'HIGH';
+    if (rate > 5)  return 'MED';
+    return 'LOW';
+}
+function getStatusBadge(status) {
+    const colors = {
+        'SELESAI': 'background-color:#d1fae5;color:#065f46;',
+        'ANALISA': 'background-color:#fee2e2;color:#991b1b;',
+        'CONTROL': 'background-color:#fef3c7;color:#92400e;'
+    };
+    return `<span class="status-badge" style="${colors[status] || ''}">${status}</span>`;
+}
+function getStatusColor(status) {
+    return { 'SELESAI': 'bg-green-100 text-green-800', 'ANALISA': 'bg-red-100 text-red-800', 'CONTROL': 'bg-yellow-100 text-yellow-800' }[status] || 'bg-gray-100 text-gray-800';
+}
+
+// ============================================================
+// Add New Problem — saves to Supabase (or local if not set up)
+// ============================================================
+async function addNewProblem(event) {
+    event.preventDefault();
+
+    const newProblem = {
+        date:     document.getElementById('input-date').value,
+        partNo:   document.getElementById('input-partno').value,
+        partName: document.getElementById('input-partname').value,
+        vendor:   document.getElementById('input-vendor').value,
+        problem:  document.getElementById('input-problem').value,
+        location: document.getElementById('input-location').value,
+        ok:       parseInt(document.getElementById('input-ok').value),
+        ng:       parseInt(document.getElementById('input-ng').value),
+        pic:      document.getElementById('input-pic').value,
+        status:   document.getElementById('input-status').value,
+        action:   document.getElementById('input-action').value
+    };
+
+    const btn = document.getElementById('submit-btn');
+    const saveStatus = document.getElementById('save-status');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+    if (isSupabaseReady && supabase) {
+        // 🟢 Save to Supabase database
+        try {
+            const { error } = await supabase
+                .from(TABLE_NAME)
+                .insert([{
+                    date:      newProblem.date,
+                    part_no:   newProblem.partNo,
+                    part_name: newProblem.partName,
+                    vendor:    newProblem.vendor,
+                    problem:   newProblem.problem,
+                    location:  newProblem.location,
+                    ok:        newProblem.ok,
+                    ng:        newProblem.ng,
+                    pic:       newProblem.pic,
+                    status:    newProblem.status,
+                    action:    newProblem.action
+                }]);
+
+            if (error) throw error;
+
+            // Real-time will auto-refresh, but also update locally for speed
+            problemsData.push(newProblem);
+            saveStatus.className = 'text-sm text-center py-2 rounded-lg bg-green-50 text-green-700';
+            saveStatus.textContent = '✅ Saved to database!';
+            saveStatus.classList.remove('hidden');
+            setTimeout(() => { hideAddModal(); }, 800);
+
+        } catch (err) {
+            console.error('Save error:', err);
+            saveStatus.className = 'text-sm text-center py-2 rounded-lg bg-red-50 text-red-700';
+            saveStatus.textContent = '❌ Save failed: ' + err.message;
+            saveStatus.classList.remove('hidden');
+        }
+    } else {
+        // 🟡 No Supabase — save locally only (resets on refresh)
+        problemsData.push(newProblem);
+        saveStatus.className = 'text-sm text-center py-2 rounded-lg bg-yellow-50 text-yellow-700';
+        saveStatus.textContent = '⚠️ Saved locally only (not in database — see setup instructions)';
+        saveStatus.classList.remove('hidden');
+        setTimeout(() => { hideAddModal(); }, 1200);
+    }
+
+    // Refresh dashboard
+    currentFilteredData = problemsData;
+    renderTable(problemsData);
+    updateKPIs(problemsData);
+    updateChartsWithFilteredData(problemsData);
+    updateFilterDropdowns();
+
+    btn.disabled = false;
+    btn.innerHTML = 'Add Problem';
+}
+
+// ============================================================
+// Charts
+// ============================================================
+function createCharts() {
+    const statusCtx = document.getElementById('statusChart').getContext('2d');
+    window.statusChart = new Chart(statusCtx, {
+        type: 'doughnut',
+        data: { labels: ['ANALISA','CONTROL','SELESAI'], datasets: [{ data: [0,0,0], backgroundColor: ['#ef4444','#f59e0b','#10b981'] }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' },
+                datalabels: { color: '#fff', font: { weight: 'bold', size: 14 }, formatter: v => v > 0 ? v : '' }
+            }
+        },
+        plugins: [ChartDataLabels]
+    });
+
+    const vendorCtx = document.getElementById('vendorChart').getContext('2d');
+    window.vendorChart = new Chart(vendorCtx, {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Problem Frequency', data: [], backgroundColor: '#ef4444' }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+            plugins: { legend: { display: false }, datalabels: { display: false } }
+        }
+    });
+
+    const partCtx = document.getElementById('partChart').getContext('2d');
+    window.partChart = new Chart(partCtx, {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Problem Frequency', data: [], backgroundColor: '#3b82f6' }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: ctx => { const p = window.partChartData?.[ctx[0].dataIndex]; return p ? [p.partNo, p.partName] : ''; },
+                        label: ctx => 'Problems: ' + ctx.parsed.y
+                    }
+                },
+                datalabels: {
+                    anchor: 'center', align: 'center', rotation: -90,
+                    color: '#fff', font: { size: 11, weight: 'bold' },
+                    formatter: (v, ctx) => { if (!v) return ''; const p = window.partChartData?.[ctx.dataIndex]; return p?.displayName || ''; }
+                }
+            }
+        },
+        plugins: [ChartDataLabels]
+    });
+
+    updateChartsWithFilteredData(problemsData);
+}
+
+function updateChartsWithFilteredData(data) {
+    if (window.statusChart) {
+        window.statusChart.data.datasets[0].data = [
+            data.filter(d => d.status === 'ANALISA').length,
+            data.filter(d => d.status === 'CONTROL').length,
+            data.filter(d => d.status === 'SELESAI').length
+        ];
+        window.statusChart.update();
+    }
+
+    const vf = {};
+    data.forEach(i => { vf[i.vendor] = (vf[i.vendor] || 0) + 1; });
+    const sv = Object.entries(vf).sort((a,b) => b[1]-a[1]).slice(0,6);
+    if (window.vendorChart) {
+        window.vendorChart.data.labels = sv.map(v => v[0]);
+        window.vendorChart.data.datasets[0].data = sv.map(v => v[1]);
+        window.vendorChart.update();
+    }
+
+    const pf = {}, pn = {};
+    data.forEach(i => { pf[i.partNo] = (pf[i.partNo] || 0) + 1; pn[i.partNo] = i.partName; });
+    const sp = Object.entries(pf).sort((a,b) => b[1]-a[1]).slice(0,6);
+    if (window.partChart) {
+        window.partChartData = sp.map(p => ({
+            partNo: p[0], partName: pn[p[0]],
+            displayName: pn[p[0]].length > 12 ? pn[p[0]].substring(0,12)+'...' : pn[p[0]],
+            frequency: p[1]
+        }));
+        window.partChart.data.labels = window.partChartData.map(p => p.partNo);
+        window.partChart.data.datasets[0].data = sp.map(p => p[1]);
+        window.partChart.update();
+    }
+}
+
+// ============================================================
+// Modals
+// ============================================================
+function showAddModal() {
+    document.getElementById('add-modal').style.display = 'flex';
+    document.getElementById('input-date').valueAsDate = new Date();
+    document.getElementById('save-status').classList.add('hidden');
+    document.getElementById('submit-btn').disabled = false;
+    document.getElementById('submit-btn').innerHTML = 'Add Problem';
+}
+function hideAddModal() {
+    document.getElementById('add-modal').style.display = 'none';
+    document.getElementById('add-form').reset();
+    document.getElementById('save-status').classList.add('hidden');
+}
+window.hideDetailModal = function() { document.getElementById('detail-modal').style.display = 'none'; };
+
+window.showPACSDetail = function() {
+    const pacsData = currentFilteredData.filter(i => i.action === 'PACS');
+    if (!pacsData.length) { alert('No PACS data in selected period'); return; }
+    showDetailModal('PACS Details', pacsData);
+};
+
+window.showVendorDetail = function() {
+    const name = document.getElementById('worst-vendor').textContent.trim();
+    if (name === '-') { alert('No vendor data'); return; }
+    const vd = currentFilteredData.filter(i => i.vendor === name);
+    showDetailModal(`${name} Problems`, vd);
+};
+
+function showDetailModal(title, data) {
+    document.getElementById('detail-modal-title').textContent = `${title} (${data.length} items)`;
+    const tbody = document.getElementById('detail-modal-body');
+    tbody.innerHTML = '';
+    data.forEach(item => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50';
+        row.innerHTML = `
+            <td class="px-4 py-3 text-sm">${new Date(item.date).toLocaleDateString('id-ID')}</td>
+            <td class="px-4 py-3 text-sm font-medium">${item.partNo}</td>
+            <td class="px-4 py-3 text-sm">${item.partName}</td>
+            <td class="px-4 py-3 text-sm">${item.problem}</td>
+            <td class="px-4 py-3 text-sm">${item.vendor}</td>
+            <td class="px-4 py-3 text-sm">${item.pic}</td>
+            <td class="px-4 py-3 text-sm"><span class="px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(item.status)}">${item.status}</span></td>
+        `;
+        tbody.appendChild(row);
+    });
+    document.getElementById('detail-modal').style.display = 'flex';
+}
+
+// ============================================================
+// Dark Mode
+// ============================================================
+function toggleDarkMode() {
+    darkMode = !darkMode;
+    document.getElementById('body').classList.toggle('dark-mode', darkMode);
+    document.getElementById('body').classList.toggle('light-mode', !darkMode);
+    document.getElementById('moon-icon').style.display = darkMode ? 'none' : 'block';
+    document.getElementById('sun-icon').style.display  = darkMode ? 'block' : 'none';
+
+    const cards = ['header-card','kpi-problems','kpi-defect','kpi-ok','kpi-ng','filters-card','status-chart-card','vendor-chart-card','part-chart-card','table-card','modal-content'];
+    cards.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.style.backgroundColor = darkMode ? '#1f2937' : '#ffffff'; el.style.color = darkMode ? '#f9fafb' : '#111827'; }
+    });
+    document.getElementById('main-title').style.color = darkMode ? '#f9fafb' : '#111827';
+    document.getElementById('subtitle').style.color   = darkMode ? '#9ca3af' : '#6b7280';
+    document.querySelectorAll('input, select').forEach(el => {
+        el.style.backgroundColor = darkMode ? '#374151' : '#ffffff';
+        el.style.borderColor     = darkMode ? '#4b5563' : '#d1d5db';
+        el.style.color           = darkMode ? '#f9fafb' : '#111827';
+    });
+    document.getElementById('table-header').style.backgroundColor = darkMode ? '#374151' : '#f9fafb';
+    document.getElementById('table-body').style.backgroundColor   = darkMode ? '#1f2937' : '#ffffff';
+}
+
+// ============================================================
+// Export
+// ============================================================
+function toggleExportMenu() {
+    const m = document.getElementById('export-menu');
+    m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', e => {
+    const m = document.getElementById('export-menu');
+    const b = document.getElementById('export-btn');
+    if (m && !m.contains(e.target) && !b.contains(e.target)) m.style.display = 'none';
+});
+
+function exportToExcel() {
+    document.getElementById('export-menu').style.display = 'none';
+    const excelData = currentFilteredData.map(item => ({
+        'Date': new Date(item.date).toLocaleDateString('id-ID'),
+        'Part No': item.partNo, 'Part Name': item.partName, 'Vendor': item.vendor,
+        'Problem': item.problem, 'Location': item.location,
+        'OK': item.ok, 'NG': item.ng,
+        'Defect Rate (%)': ((item.ng/(item.ok+item.ng))*100).toFixed(2),
+        'Priority': getPriorityText(item.ng, item.ok+item.ng),
+        'PIC': item.pic, 'Status': item.status, 'Action': item.action
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Welding Problems');
+    XLSX.writeFile(wb, `Welding_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showNotification('Excel downloaded!', 'success');
+}
+
+function exportToPDF() {
+    document.getElementById('export-menu').style.display = 'none';
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('landscape');
+    doc.setFontSize(18); doc.text('Welding Quality Control Report', 14, 15);
+    const totalNG = currentFilteredData.reduce((s,i)=>s+i.ng,0);
+    const totalOK = currentFilteredData.reduce((s,i)=>s+i.ok,0);
+    doc.setFontSize(10); doc.text(`Total: ${currentFilteredData.length} | Defect Rate: ${((totalNG/(totalOK+totalNG))*100).toFixed(2)}% | ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+    doc.autoTable({
+        startY: 28,
+        head: [['Date','Part No','Part Name','Vendor','Problem','Location','OK','NG','Rate','Priority','PIC','Status','Action']],
+        body: currentFilteredData.map(i => [
+            new Date(i.date).toLocaleDateString('id-ID'), i.partNo, i.partName, i.vendor, i.problem, i.location,
+            i.ok, i.ng, ((i.ng/(i.ok+i.ng))*100).toFixed(1)+'%', getPriorityText(i.ng,i.ok+i.ng), i.pic, i.status, i.action
+        ]),
+        styles: { fontSize: 7, cellPadding: 2 },
+        headStyles: { fillColor: [59,130,246], textColor: 255, fontStyle: 'bold' }
+    });
+    doc.save(`Welding_${new Date().toISOString().split('T')[0]}.pdf`);
+    showNotification('PDF downloaded!', 'success');
+}
+
+function showNotification(message, type) {
+    const n = document.createElement('div');
+    n.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white font-semibold`;
+    n.textContent = message;
+    document.body.appendChild(n);
+    setTimeout(() => { n.style.opacity='0'; n.style.transition='opacity 0.5s'; setTimeout(()=>n.remove(),500); }, 3000);
+}
+</script>
+</body>
+</html>
